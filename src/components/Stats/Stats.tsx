@@ -1,6 +1,7 @@
 import { useState } from 'react'
+import type React from 'react'
 import { motion } from 'framer-motion'
-import type { GameState } from '@/types'
+import type { GameState, Settings } from '@/types'
 import { ACHIEVEMENTS, getAchievementProgress } from '@/data/achievements'
 import { CONTENT_TYPES } from '@/data/contentTypes'
 import { LEVELS, getLevelForXp } from '@/data/levels'
@@ -11,10 +12,19 @@ import Card from '@/components/shared/Card'
 interface Props {
   state: GameState
   onReset: () => void
+  onAddIdea: (text: string) => void
+  onMarkIdeaUsed: (id: string) => void
+  onDeleteIdea: (id: string) => void
+  onUpdateSettings: (s: Partial<Settings>) => void
+  onRequestNotifications: () => Promise<boolean>
 }
 
-export default function Stats({ state, onReset }: Props) {
-  const [tab, setTab] = useState<'achievements' | 'heatmap' | 'levels' | 'ideas'>('achievements')
+export default function Stats({
+  state, onReset,
+  onAddIdea, onMarkIdeaUsed, onDeleteIdea,
+  onUpdateSettings, onRequestNotifications,
+}: Props) {
+  const [tab, setTab] = useState<'achievements' | 'heatmap' | 'levels' | 'ideas' | 'settings'>('achievements')
   const [newIdea, setNewIdea] = useState('')
   const level = getLevelForXp(state.totalXp)
 
@@ -62,6 +72,7 @@ export default function Stats({ state, onReset }: Props) {
           { id: 'heatmap', label: 'Карта' },
           { id: 'levels', label: 'Уровни' },
           { id: 'ideas', label: 'Идеи' },
+          { id: 'settings', label: '⚙️' },
         ].map((t) => (
           <button
             key={t.id}
@@ -189,7 +200,23 @@ export default function Stats({ state, onReset }: Props) {
 
       {/* Ideas bank */}
       {tab === 'ideas' && (
-        <IdeaBank state={state} newIdea={newIdea} setNewIdea={setNewIdea} />
+        <IdeaBank
+          state={state}
+          newIdea={newIdea}
+          setNewIdea={setNewIdea}
+          onAddIdea={onAddIdea}
+          onMarkIdeaUsed={onMarkIdeaUsed}
+          onDeleteIdea={onDeleteIdea}
+        />
+      )}
+
+      {/* Settings */}
+      {tab === 'settings' && (
+        <SettingsPanel
+          state={state}
+          onUpdateSettings={onUpdateSettings}
+          onRequestNotifications={onRequestNotifications}
+        />
       )}
 
       {/* Reset */}
@@ -245,11 +272,21 @@ function HeatMap({ log }: { log: GameState['log'] }) {
   )
 }
 
-function IdeaBank({ state, newIdea, setNewIdea }: {
+function IdeaBank({ state, newIdea, setNewIdea, onAddIdea, onMarkIdeaUsed, onDeleteIdea }: {
   state: GameState
   newIdea: string
   setNewIdea: (v: string) => void
+  onAddIdea: (text: string) => void
+  onMarkIdeaUsed: (id: string) => void
+  onDeleteIdea: (id: string) => void
 }) {
+  const handleAdd = () => {
+    const trimmed = newIdea.trim()
+    if (!trimmed) return
+    onAddIdea(trimmed)
+    setNewIdea('')
+  }
+
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
@@ -257,11 +294,7 @@ function IdeaBank({ state, newIdea, setNewIdea }: {
           value={newIdea}
           onChange={(e) => setNewIdea(e.target.value)}
           placeholder="Добавить идею для поста..."
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && newIdea.trim()) {
-              // handled by parent through state
-            }
-          }}
+          onKeyDown={(e) => { if (e.key === 'Enter') handleAdd() }}
           style={{
             flex: 1, padding: '10px 12px',
             background: 'var(--color-surface)', border: '1px solid var(--color-border)',
@@ -269,6 +302,19 @@ function IdeaBank({ state, newIdea, setNewIdea }: {
             fontFamily: 'var(--font-mono)', outline: 'none',
           }}
         />
+        <button
+          onClick={handleAdd}
+          disabled={!newIdea.trim()}
+          style={{
+            padding: '10px 16px', borderRadius: 8, border: 'none', cursor: 'pointer',
+            background: newIdea.trim() ? 'var(--color-accent)' : 'var(--color-border)',
+            color: newIdea.trim() ? '#0a0a0f' : '#555',
+            fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 13,
+            flexShrink: 0,
+          }}
+        >
+          +
+        </button>
       </div>
       {state.ideas.length === 0 && (
         <div style={{ color: 'var(--color-muted)', fontSize: 12, textAlign: 'center', padding: 20 }}>
@@ -277,17 +323,157 @@ function IdeaBank({ state, newIdea, setNewIdea }: {
       )}
       {state.ideas.map((idea) => (
         <div key={idea.id} style={{
-          display: 'flex', alignItems: 'center', gap: 10,
+          display: 'flex', alignItems: 'center', gap: 8,
           padding: '10px 12px', background: 'var(--color-surface)', borderRadius: 8,
           marginBottom: 4, border: '1px solid var(--color-border)',
-          opacity: idea.used ? 0.4 : 1,
+          opacity: idea.used ? 0.45 : 1,
         }}>
-          <span style={{ flex: 1, fontSize: 12, color: idea.used ? 'var(--color-muted)' : 'var(--color-text)' }}>
-            {idea.used && <span style={{ textDecoration: 'line-through' }}>{idea.text}</span>}
-            {!idea.used && idea.text}
+          <span style={{
+            flex: 1, fontSize: 12,
+            color: idea.used ? 'var(--color-muted)' : 'var(--color-text)',
+            textDecoration: idea.used ? 'line-through' : 'none',
+          }}>
+            {idea.text}
           </span>
+          {!idea.used && (
+            <button
+              onClick={() => onMarkIdeaUsed(idea.id)}
+              title="Отметить использованной"
+              style={{
+                background: 'none', border: '1px solid var(--color-border)',
+                borderRadius: 6, cursor: 'pointer', padding: '3px 8px',
+                color: 'var(--color-success)', fontSize: 11, fontFamily: 'var(--font-mono)',
+              }}
+            >
+              ✓
+            </button>
+          )}
+          <button
+            onClick={() => onDeleteIdea(idea.id)}
+            title="Удалить"
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--color-muted)', fontSize: 14, padding: '3px 6px',
+              lineHeight: 1,
+            }}
+          >
+            ×
+          </button>
         </div>
       ))}
     </div>
+  )
+}
+
+function SettingsPanel({ state, onUpdateSettings, onRequestNotifications }: {
+  state: GameState
+  onUpdateSettings: (s: Partial<Settings>) => void
+  onRequestNotifications: () => Promise<boolean>
+}) {
+  const notifSupported = 'Notification' in window
+  const notifPermission = notifSupported ? Notification.permission : 'denied'
+
+  const handleNotifToggle = async () => {
+    if (state.settings.notificationsEnabled) {
+      onUpdateSettings({ notificationsEnabled: false })
+      return
+    }
+    if (notifPermission !== 'granted') {
+      const granted = await onRequestNotifications()
+      if (!granted) return
+    }
+    onUpdateSettings({ notificationsEnabled: true })
+  }
+
+  const rows: { label: string; desc: string; key: keyof typeof state.settings; extra?: React.ReactNode }[] = [
+    {
+      label: '🔊 Звуки',
+      desc: 'Эффекты при логировании, анлоке достижений, рулетке',
+      key: 'soundEnabled',
+    },
+    {
+      label: '📳 Вибрация',
+      desc: 'Тактильный отклик при логировании и анлоке',
+      key: 'vibrateEnabled',
+    },
+  ]
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {rows.map(({ label, desc, key }) => (
+        <div key={key} style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+          padding: '14px 16px', background: 'var(--color-surface)', borderRadius: 10,
+          border: '1px solid var(--color-border)',
+        }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>{label}</div>
+            <div style={{ fontSize: 10, color: 'var(--color-muted)', marginTop: 3 }}>{desc}</div>
+          </div>
+          <Toggle
+            value={state.settings[key] as boolean}
+            onChange={(v) => onUpdateSettings({ [key]: v })}
+          />
+        </div>
+      ))}
+
+      {/* Notifications — special case */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+        padding: '14px 16px', background: 'var(--color-surface)', borderRadius: 10,
+        border: '1px solid var(--color-border)',
+        opacity: notifSupported ? 1 : 0.5,
+      }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>🔔 Уведомления</div>
+          <div style={{ fontSize: 10, color: 'var(--color-muted)', marginTop: 3 }}>
+            Напоминание в 21:00 если нет поста
+          </div>
+          {!notifSupported && (
+            <div style={{ fontSize: 10, color: 'var(--color-danger)', marginTop: 3 }}>
+              Не поддерживается в этом браузере
+            </div>
+          )}
+          {notifSupported && notifPermission === 'denied' && (
+            <div style={{ fontSize: 10, color: 'var(--color-danger)', marginTop: 3 }}>
+              Доступ запрещён в настройках браузера
+            </div>
+          )}
+        </div>
+        <Toggle
+          value={state.settings.notificationsEnabled}
+          onChange={() => handleNotifToggle()}
+          disabled={!notifSupported || notifPermission === 'denied'}
+        />
+      </div>
+    </div>
+  )
+}
+
+function Toggle({ value, onChange, disabled }: {
+  value: boolean
+  onChange: (v: boolean) => void
+  disabled?: boolean
+}) {
+  return (
+    <button
+      onClick={() => !disabled && onChange(!value)}
+      style={{
+        width: 44, height: 24, borderRadius: 12,
+        border: 'none', cursor: disabled ? 'not-allowed' : 'pointer',
+        background: value ? 'var(--color-accent)' : 'var(--color-border)',
+        position: 'relative', flexShrink: 0,
+        transition: 'background 0.2s',
+        opacity: disabled ? 0.4 : 1,
+      }}
+    >
+      <div style={{
+        position: 'absolute', top: 3,
+        left: value ? 23 : 3,
+        width: 18, height: 18, borderRadius: '50%',
+        background: value ? '#0a0a0f' : '#555',
+        transition: 'left 0.2s',
+      }} />
+    </button>
   )
 }

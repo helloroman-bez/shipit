@@ -44,7 +44,7 @@ export default function App() {
   const today = getToday()
   const postedToday = state.lastPostDate === today
 
-  useNotifications(state.settings.notificationsEnabled, state.streak, postedToday)
+  const { requestPermission } = useNotifications(state.settings.notificationsEnabled, state.streak, postedToday)
 
   const tabIndex = PAGE_ORDER.indexOf(tab)
 
@@ -71,6 +71,11 @@ export default function App() {
           <Stats
             state={state}
             onReset={resetGame}
+            onAddIdea={addIdea}
+            onMarkIdeaUsed={markIdeaUsed}
+            onDeleteIdea={deleteIdea}
+            onUpdateSettings={updateSettings}
+            onRequestNotifications={requestPermission}
           />
         )
     }
