@@ -31,6 +31,7 @@ function getDefaultState(): GameState {
     settings: { soundEnabled: true, notificationsEnabled: false, vibrateEnabled: true },
     season: { number: 1, startDate: today, endDate: getSeasonEndDate(today), seasonXp: 0 },
     rouletteUsedDates: [],
+    onboardingCompleted: false,
   }
 }
 
@@ -279,6 +280,10 @@ export function useGameState() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh))
   }, [])
 
+  const completeOnboarding = useCallback(() => {
+    setState((prev) => ({ ...prev, onboardingCompleted: true }))
+  }, [])
+
   return {
     state,
     addPost,
@@ -287,6 +292,7 @@ export function useGameState() {
     deleteIdea,
     updateSettings,
     resetGame,
+    completeOnboarding,
     penaltyShown,
     dismissPenalty,
     newlyUnlocked,

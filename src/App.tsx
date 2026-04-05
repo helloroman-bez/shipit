@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useGameState } from '@/hooks/useGameState'
 import { useNotifications } from '@/hooks/useNotifications'
 import Layout from '@/components/Layout/Layout'
+import Onboarding from '@/components/Onboarding/Onboarding'
 import AchievementToast from '@/components/shared/AchievementToast'
 import PenaltyToast from '@/components/shared/PenaltyToast'
 import { getToday } from '@/utils/dates'
@@ -36,7 +37,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('dashboard')
   const {
     state, addPost, addIdea, markIdeaUsed, deleteIdea,
-    updateSettings, resetGame,
+    updateSettings, resetGame, completeOnboarding,
     penaltyShown, dismissPenalty,
     newlyUnlocked, dismissUnlocked,
   } = useGameState()
@@ -79,6 +80,28 @@ export default function App() {
           />
         )
     }
+  }
+
+  // Show onboarding for new users
+  if (!state.onboardingCompleted) {
+    return (
+      <AnimatePresence>
+        <motion.div
+          key="onboarding"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          style={{ height: '100%' }}
+        >
+          <Onboarding
+            onComplete={() => {
+              completeOnboarding()
+              setTab('log')
+            }}
+          />
+        </motion.div>
+      </AnimatePresence>
+    )
   }
 
   return (

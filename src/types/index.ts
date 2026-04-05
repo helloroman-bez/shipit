@@ -110,4 +110,5 @@ export interface GameState {
   settings: Settings
   season: Season
   rouletteUsedDates: string[]
+  onboardingCompleted: boolean
 }
