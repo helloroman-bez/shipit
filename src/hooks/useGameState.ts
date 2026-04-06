@@ -84,6 +84,7 @@ function migrateFromV1(): GameState | null {
         bonusXp: entry.bonus as number || 0,
         platform: entry.platform as string | undefined,
       })),
+      onboardingCompleted: true,
     }
     localStorage.removeItem(STORAGE_KEY_V1)
     return migrated
@@ -95,7 +96,14 @@ function migrateFromV1(): GameState | null {
 function loadState(): GameState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return JSON.parse(raw) as GameState
+    if (raw) {
+      const parsed = JSON.parse(raw) as GameState
+      // Backfill fields added after initial release
+      if (parsed.onboardingCompleted === undefined) {
+        parsed.onboardingCompleted = parsed.totalPosts > 0
+      }
+      return parsed
+    }
   } catch {}
   const migrated = migrateFromV1()
   if (migrated) return migrated
