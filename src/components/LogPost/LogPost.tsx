@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import type { GameState } from '@/types'
-import { CONTENT_TYPES, PLATFORMS } from '@/data/contentTypes'
+import { CONTENT_TYPES, PLATFORMS, type Platform } from '@/data/contentTypes'
 import { getDailyQuest } from '@/data/dailyQuests'
 import { getToday } from '@/utils/dates'
 import { calculateXp, getPostsToday, getComboLabel } from '@/utils/xp'
@@ -41,11 +41,15 @@ export default function LogPost({ state, onAddPost }: Props) {
       )
     : null
 
+  const selectedPlatformName = selectedPlatform
+    ? PLATFORMS.find((p) => p.id === selectedPlatform)?.name
+    : undefined
+
   const handleSubmit = () => {
     if (!selectedType) return
     onAddPost(
       selectedType,
-      selectedPlatform || undefined,
+      selectedPlatformName,
       reach ? parseInt(reach) : undefined,
       false,
       markQuest && !questDoneToday,
@@ -116,23 +120,57 @@ export default function LogPost({ state, onAddPost }: Props) {
         <div style={{ fontSize: 10, color: 'var(--color-muted)', letterSpacing: 2, marginBottom: 10 }}>
           ПЛОЩАДКА
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {PLATFORMS.map((p) => (
-            <button
-              key={p}
-              onClick={() => setSelectedPlatform(selectedPlatform === p ? null : p)}
-              style={{
-                padding: '8px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
-                fontFamily: 'var(--font-mono)', fontWeight: 600,
-                background: selectedPlatform === p ? 'var(--color-accent)' : 'var(--color-surface)',
-                color: selectedPlatform === p ? '#0a0a0f' : '#666',
-                border: `1px solid ${selectedPlatform === p ? 'var(--color-accent)' : 'var(--color-border)'}`,
-                transition: 'all 0.15s',
-              }}
-            >
-              {p}
-            </button>
-          ))}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+          {PLATFORMS.map((p: Platform) => {
+            const isSelected = selectedPlatform === p.id
+            return (
+              <button
+                key={p.id}
+                onClick={() => setSelectedPlatform(isSelected ? null : p.id)}
+                style={{
+                  padding: '10px 8px',
+                  borderRadius: 10,
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-mono)',
+                  fontWeight: 600,
+                  fontSize: 12,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 7,
+                  border: `2px solid ${isSelected ? p.color : 'var(--color-border)'}`,
+                  background: isSelected ? p.color + '22' : 'var(--color-surface)',
+                  color: isSelected ? p.textColor === '#fff' ? '#e8e6e1' : p.textColor : '#666',
+                  transition: 'all 0.15s',
+                  position: 'relative',
+                  overflow: 'hidden',
+                }}
+              >
+                {isSelected && (
+                  <div style={{
+                    position: 'absolute', inset: 0,
+                    background: p.color,
+                    opacity: 0.15,
+                    pointerEvents: 'none',
+                  }} />
+                )}
+                <span style={{ fontSize: 16, flexShrink: 0 }}>{p.icon}</span>
+                <span style={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  color: isSelected ? '#e8e6e1' : '#888',
+                }}>
+                  {p.name}
+                </span>
+                {isSelected && (
+                  <span style={{
+                    position: 'absolute', top: 4, right: 5,
+                    fontSize: 9, color: p.color, fontWeight: 800,
+                  }}>✓</span>
+                )}
+              </button>
+            )
+          })}
         </div>
       </div>
 
