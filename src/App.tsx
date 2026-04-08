@@ -40,6 +40,7 @@ export default function App() {
     updateSettings, resetGame, completeOnboarding,
     penaltyShown, dismissPenalty,
     newlyUnlocked, dismissUnlocked,
+    userId, syncStatus, importFromCloud, isCloudEnabled,
   } = useGameState()
 
   const today = getToday()
@@ -77,6 +78,10 @@ export default function App() {
             onDeleteIdea={deleteIdea}
             onUpdateSettings={updateSettings}
             onRequestNotifications={requestPermission}
+            userId={userId}
+            syncStatus={syncStatus}
+            onImportFromCloud={importFromCloud}
+            isCloudEnabled={isCloudEnabled}
           />
         )
     }

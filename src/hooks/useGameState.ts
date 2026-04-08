@@ -5,6 +5,8 @@ import { ACHIEVEMENTS } from '@/data/achievements'
 import { CHALLENGES } from '@/data/challenges'
 import { getToday, getYesterday, getDaysBetween, getSeasonEndDate } from '@/utils/dates'
 import { calculateXp, applyPenalty, getPenaltyAmount, getPostsToday } from '@/utils/xp'
+import { useCloudSync, getOrCreateUserId, setUserId } from './useCloudSync'
+import { isSupabaseEnabled } from '@/lib/supabase'
 
 const STORAGE_KEY = 'ship_it_v2'
 const STORAGE_KEY_V1 = 'ship_it_v1'
@@ -144,12 +146,16 @@ export function useGameState() {
   })
   const [penaltyShown, setPenaltyShown] = useState<number>(0)
   const [newlyUnlocked, setNewlyUnlocked] = useState<string | null>(null)
+  const [userId] = useState<string>(() => getOrCreateUserId())
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'ok' | 'error'>('idle')
+  const { saveToCloud, loadFromCloud } = useCloudSync()
 
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
     } catch {}
-  }, [state])
+    saveToCloud(state)
+  }, [state, saveToCloud])
 
   // Check if penalty applied on load
   useEffect(() => {
@@ -292,6 +298,23 @@ export function useGameState() {
     setState((prev) => ({ ...prev, onboardingCompleted: true }))
   }, [])
 
+  const importFromCloud = useCallback(async (importId: string): Promise<boolean> => {
+    if (!isSupabaseEnabled) return false
+    setSyncStatus('syncing')
+    try {
+      const cloudState = await loadFromCloud(importId)
+      if (!cloudState) { setSyncStatus('error'); return false }
+      setUserId(importId)
+      const { state: withPenalty } = applyDailyPenalty(cloudState)
+      setState(withPenalty)
+      setSyncStatus('ok')
+      return true
+    } catch {
+      setSyncStatus('error')
+      return false
+    }
+  }, [loadFromCloud])
+
   return {
     state,
     addPost,
@@ -305,5 +328,9 @@ export function useGameState() {
     dismissPenalty,
     newlyUnlocked,
     dismissUnlocked,
+    userId,
+    syncStatus,
+    importFromCloud,
+    isCloudEnabled: isSupabaseEnabled,
   }
 }
