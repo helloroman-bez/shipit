@@ -484,7 +484,7 @@ function SettingsPanel({ state, onUpdateSettings, onRequestNotifications, telegr
             <div style={{ fontSize: 11, color: 'var(--color-muted)', marginBottom: 12, lineHeight: 1.5 }}>
               Войди через Telegram — прогресс автоматически синхронизируется на всех устройствах.
             </div>
-            <TelegramLoginButton onAuth={onTelegramLogin} />
+            <TelegramLoginButton />
             {isCloudEnabled && (
               <div style={{ fontSize: 10, color: 'var(--color-muted)', marginTop: 10, textAlign: 'center' }}>
                 Sync ID: <span style={{ fontFamily: 'var(--font-mono)', opacity: 0.6 }}>{syncKey.slice(0, 16)}…</span>

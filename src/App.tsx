@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from 'react'
+import { useState, lazy, Suspense, useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useGameState } from '@/hooks/useGameState'
 import { useNotifications } from '@/hooks/useNotifications'
@@ -7,6 +7,7 @@ import Onboarding from '@/components/Onboarding/Onboarding'
 import AchievementToast from '@/components/shared/AchievementToast'
 import PenaltyToast from '@/components/shared/PenaltyToast'
 import { getToday } from '@/utils/dates'
+import type { TelegramUser } from '@/types'
 
 const Dashboard = lazy(() => import('@/components/Dashboard/Dashboard'))
 const LogPost = lazy(() => import('@/components/LogPost/LogPost'))
@@ -50,6 +51,28 @@ export default function App() {
   const { requestPermission } = useNotifications(state.settings.notificationsEnabled, state.streak, postedToday)
 
   const tabIndex = PAGE_ORDER.indexOf(tab)
+
+  // Handle Telegram redirect-mode auth (works on mobile)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const id = params.get('id')
+    const hash = params.get('hash')
+    if (!id || !hash) return
+
+    const user: TelegramUser = {
+      id: Number(id),
+      first_name: params.get('first_name') ?? '',
+      last_name: params.get('last_name') ?? undefined,
+      username: params.get('username') ?? undefined,
+      photo_url: params.get('photo_url') ?? undefined,
+      auth_date: Number(params.get('auth_date')),
+      hash,
+    }
+    loginWithTelegram(user)
+    // Clean URL and switch to settings so user sees they're logged in
+    window.history.replaceState({}, '', '/')
+    setTab('stats')
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleTabChange = (newTab: Tab) => setTab(newTab)
 
