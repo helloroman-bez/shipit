@@ -1,11 +1,12 @@
-import { useState, useEffect, useCallback } from 'react'
-import type { GameState, LogEntry, Settings, Idea } from '@/types'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import type { GameState, LogEntry, Settings, TelegramUser } from '@/types'
 import { CONTENT_TYPES } from '@/data/contentTypes'
 import { ACHIEVEMENTS } from '@/data/achievements'
 import { CHALLENGES } from '@/data/challenges'
 import { getToday, getYesterday, getDaysBetween, getSeasonEndDate } from '@/utils/dates'
 import { calculateXp, applyPenalty, getPenaltyAmount, getPostsToday } from '@/utils/xp'
-import { useCloudSync, getOrCreateUserId, setUserId } from './useCloudSync'
+import { useCloudSync, getOrCreateUserId } from './useCloudSync'
+import { loadTelegramUser, saveTelegramUser, clearTelegramUser } from './useTelegramAuth'
 import { isSupabaseEnabled } from '@/lib/supabase'
 
 const STORAGE_KEY = 'ship_it_v2'
@@ -100,7 +101,6 @@ function loadState(): GameState {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) {
       const parsed = JSON.parse(raw) as GameState
-      // Backfill fields added after initial release
       if (parsed.onboardingCompleted === undefined) {
         parsed.onboardingCompleted = parsed.totalPosts > 0
       }
@@ -146,16 +146,29 @@ export function useGameState() {
   })
   const [penaltyShown, setPenaltyShown] = useState<number>(0)
   const [newlyUnlocked, setNewlyUnlocked] = useState<string | null>(null)
-  const [userId] = useState<string>(() => getOrCreateUserId())
+  const [telegramUser, setTelegramUser] = useState<TelegramUser | null>(() => loadTelegramUser())
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'ok' | 'error'>('idle')
   const { saveToCloud, loadFromCloud } = useCloudSync()
 
+  // Compute sync key: Telegram ID takes priority over UUID
+  const syncKey = useMemo(
+    () => telegramUser ? `tg_${telegramUser.id}` : getOrCreateUserId(),
+    [telegramUser]
+  )
+
+  // Auto-save to cloud on state change
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
     } catch {}
-    saveToCloud(state)
-  }, [state, saveToCloud])
+    if (isSupabaseEnabled) {
+      setSyncStatus('syncing')
+      saveToCloud(state, syncKey)
+      // Optimistically mark as ok after debounce delay
+      const t = setTimeout(() => setSyncStatus('ok'), 2500)
+      return () => clearTimeout(t)
+    }
+  }, [state, saveToCloud, syncKey])
 
   // Check if penalty applied on load
   useEffect(() => {
@@ -210,7 +223,6 @@ export function useGameState() {
       const ct = CONTENT_TYPES.find((c) => c.id === contentTypeId)
       if (!ct) return prev
 
-      // Streak calculation
       const alreadyPostedToday = prev.lastPostDate === today
       let newStreak = prev.streak
       if (!alreadyPostedToday) {
@@ -298,22 +310,28 @@ export function useGameState() {
     setState((prev) => ({ ...prev, onboardingCompleted: true }))
   }, [])
 
-  const importFromCloud = useCallback(async (importId: string): Promise<boolean> => {
-    if (!isSupabaseEnabled) return false
-    setSyncStatus('syncing')
-    try {
-      const cloudState = await loadFromCloud(importId)
-      if (!cloudState) { setSyncStatus('error'); return false }
-      setUserId(importId)
-      const { state: withPenalty } = applyDailyPenalty(cloudState)
-      setState(withPenalty)
-      setSyncStatus('ok')
-      return true
-    } catch {
-      setSyncStatus('error')
-      return false
+  // Called when user completes Telegram login
+  const loginWithTelegram = useCallback(async (user: TelegramUser) => {
+    saveTelegramUser(user)
+    setTelegramUser(user)
+    // Auto-load their cloud data if Supabase is enabled
+    if (isSupabaseEnabled) {
+      setSyncStatus('syncing')
+      const cloudState = await loadFromCloud(`tg_${user.id}`)
+      if (cloudState) {
+        const { state: withPenalty } = applyDailyPenalty(cloudState)
+        setState(withPenalty)
+        setSyncStatus('ok')
+      } else {
+        setSyncStatus('idle')
+      }
     }
   }, [loadFromCloud])
+
+  const logoutTelegram = useCallback(() => {
+    clearTelegramUser()
+    setTelegramUser(null)
+  }, [])
 
   return {
     state,
@@ -328,9 +346,11 @@ export function useGameState() {
     dismissPenalty,
     newlyUnlocked,
     dismissUnlocked,
-    userId,
+    telegramUser,
+    loginWithTelegram,
+    logoutTelegram,
+    syncKey,
     syncStatus,
-    importFromCloud,
     isCloudEnabled: isSupabaseEnabled,
   }
 }

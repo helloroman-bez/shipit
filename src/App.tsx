@@ -40,7 +40,8 @@ export default function App() {
     updateSettings, resetGame, completeOnboarding,
     penaltyShown, dismissPenalty,
     newlyUnlocked, dismissUnlocked,
-    userId, syncStatus, importFromCloud, isCloudEnabled,
+    telegramUser, loginWithTelegram, logoutTelegram,
+    syncKey, syncStatus, isCloudEnabled,
   } = useGameState()
 
   const today = getToday()
@@ -78,9 +79,11 @@ export default function App() {
             onDeleteIdea={deleteIdea}
             onUpdateSettings={updateSettings}
             onRequestNotifications={requestPermission}
-            userId={userId}
+            telegramUser={telegramUser}
+            onTelegramLogin={loginWithTelegram}
+            onTelegramLogout={logoutTelegram}
+            syncKey={syncKey}
             syncStatus={syncStatus}
-            onImportFromCloud={importFromCloud}
             isCloudEnabled={isCloudEnabled}
           />
         )

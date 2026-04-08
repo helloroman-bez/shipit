@@ -13,35 +13,30 @@ export function getOrCreateUserId(): string {
   return id
 }
 
-export function setUserId(id: string) {
-  localStorage.setItem(USER_ID_KEY, id)
-}
-
 export function useCloudSync() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const saveToCloud = useCallback((state: GameState) => {
+  const saveToCloud = useCallback((state: GameState, syncKey: string) => {
     if (!isSupabaseEnabled || !supabase) return
     const client = supabase
-    const userId = getOrCreateUserId()
 
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(async () => {
       await client.from('user_progress').upsert({
-        user_id: userId,
+        user_id: syncKey,
         state,
         updated_at: new Date().toISOString(),
       })
     }, 2000)
   }, [])
 
-  const loadFromCloud = useCallback(async (userId: string): Promise<GameState | null> => {
+  const loadFromCloud = useCallback(async (syncKey: string): Promise<GameState | null> => {
     if (!isSupabaseEnabled || !supabase) return null
     const client = supabase
     const { data, error } = await client
       .from('user_progress')
       .select('state')
-      .eq('user_id', userId)
+      .eq('user_id', syncKey)
       .single()
     if (error || !data) return null
     return data.state as GameState

@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import type React from 'react'
 import { motion } from 'framer-motion'
-import type { GameState, Settings } from '@/types'
+import type { GameState, Settings, TelegramUser } from '@/types'
+import TelegramLoginButton from '@/components/TelegramLogin/TelegramLogin'
+import { isTelegramLoginEnabled } from '@/hooks/useTelegramAuth'
 import { ACHIEVEMENTS, getAchievementProgress } from '@/data/achievements'
 import { CONTENT_TYPES } from '@/data/contentTypes'
 import { LEVELS, getLevelForXp } from '@/data/levels'
@@ -17,9 +19,11 @@ interface Props {
   onDeleteIdea: (id: string) => void
   onUpdateSettings: (s: Partial<Settings>) => void
   onRequestNotifications: () => Promise<boolean>
-  userId: string
+  telegramUser: TelegramUser | null
+  onTelegramLogin: (user: TelegramUser) => void
+  onTelegramLogout: () => void
+  syncKey: string
   syncStatus: 'idle' | 'syncing' | 'ok' | 'error'
-  onImportFromCloud: (id: string) => Promise<boolean>
   isCloudEnabled: boolean
 }
 
@@ -27,7 +31,8 @@ export default function Stats({
   state, onReset,
   onAddIdea, onMarkIdeaUsed, onDeleteIdea,
   onUpdateSettings, onRequestNotifications,
-  userId, syncStatus, onImportFromCloud, isCloudEnabled,
+  telegramUser, onTelegramLogin, onTelegramLogout,
+  syncKey, syncStatus, isCloudEnabled,
 }: Props) {
   const [tab, setTab] = useState<'achievements' | 'heatmap' | 'levels' | 'ideas' | 'settings'>('achievements')
   const [newIdea, setNewIdea] = useState('')
@@ -221,9 +226,11 @@ export default function Stats({
           state={state}
           onUpdateSettings={onUpdateSettings}
           onRequestNotifications={onRequestNotifications}
-          userId={userId}
+          telegramUser={telegramUser}
+          onTelegramLogin={onTelegramLogin}
+          onTelegramLogout={onTelegramLogout}
+          syncKey={syncKey}
           syncStatus={syncStatus}
-          onImportFromCloud={onImportFromCloud}
           isCloudEnabled={isCloudEnabled}
         />
       )}
@@ -374,19 +381,17 @@ function IdeaBank({ state, newIdea, setNewIdea, onAddIdea, onMarkIdeaUsed, onDel
   )
 }
 
-function SettingsPanel({ state, onUpdateSettings, onRequestNotifications, userId, syncStatus, onImportFromCloud, isCloudEnabled }: {
+function SettingsPanel({ state, onUpdateSettings, onRequestNotifications, telegramUser, onTelegramLogin, onTelegramLogout, syncKey, syncStatus, isCloudEnabled }: {
   state: GameState
   onUpdateSettings: (s: Partial<Settings>) => void
   onRequestNotifications: () => Promise<boolean>
-  userId: string
+  telegramUser: TelegramUser | null
+  onTelegramLogin: (user: TelegramUser) => void
+  onTelegramLogout: () => void
+  syncKey: string
   syncStatus: 'idle' | 'syncing' | 'ok' | 'error'
-  onImportFromCloud: (id: string) => Promise<boolean>
   isCloudEnabled: boolean
 }) {
-  const [importId, setImportId] = useState('')
-  const [importStatus, setImportStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
-  const [copied, setCopied] = useState(false)
-
   const notifSupported = 'Notification' in window
   const notifPermission = notifSupported ? Notification.permission : 'denied'
 
@@ -402,23 +407,7 @@ function SettingsPanel({ state, onUpdateSettings, onRequestNotifications, userId
     onUpdateSettings({ notificationsEnabled: true })
   }
 
-  const handleCopyId = () => {
-    navigator.clipboard.writeText(userId)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  }
-
-  const handleImport = async () => {
-    const trimmed = importId.trim()
-    if (!trimmed) return
-    setImportStatus('loading')
-    const ok = await onImportFromCloud(trimmed)
-    setImportStatus(ok ? 'ok' : 'error')
-    if (ok) setImportId('')
-    setTimeout(() => setImportStatus('idle'), 2500)
-  }
-
-  const syncLabel = { idle: '', syncing: '⟳', ok: '✓ Сохранено', error: '✗ Ошибка' }[syncStatus]
+  const syncLabel = { idle: '', syncing: '⟳ Сохранение...', ok: '✓ Сохранено', error: '✗ Ошибка' }[syncStatus]
 
   const rows: { label: string; desc: string; key: keyof typeof state.settings }[] = [
     { label: '🔊 Звуки', desc: 'Эффекты при логировании, анлоке достижений, рулетке', key: 'soundEnabled' },
@@ -427,6 +416,95 @@ function SettingsPanel({ state, onUpdateSettings, onRequestNotifications, userId
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {/* Telegram auth / cloud sync */}
+      <div style={{
+        padding: '16px', background: 'var(--color-surface)', borderRadius: 10,
+        border: `1px solid ${telegramUser ? 'var(--color-success)' : 'var(--color-border)'}`,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>☁️ Синхронизация</div>
+          {isCloudEnabled && syncStatus !== 'idle' && (
+            <span style={{
+              fontSize: 10, fontWeight: 600,
+              color: syncStatus === 'ok' ? 'var(--color-success)' : syncStatus === 'error' ? 'var(--color-danger)' : 'var(--color-muted)',
+            }}>
+              {syncLabel}
+            </span>
+          )}
+        </div>
+
+        {telegramUser ? (
+          /* Logged in */
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+              {telegramUser.photo_url && (
+                <img
+                  src={telegramUser.photo_url}
+                  alt=""
+                  style={{ width: 40, height: 40, borderRadius: '50%', flexShrink: 0 }}
+                />
+              )}
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text)' }}>
+                  {telegramUser.first_name}{telegramUser.last_name ? ` ${telegramUser.last_name}` : ''}
+                </div>
+                {telegramUser.username && (
+                  <div style={{ fontSize: 11, color: 'var(--color-muted)', marginTop: 2 }}>
+                    @{telegramUser.username}
+                  </div>
+                )}
+              </div>
+              <div style={{
+                marginLeft: 'auto', fontSize: 10, color: 'var(--color-success)',
+                fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4,
+              }}>
+                ✓ Подключён
+              </div>
+            </div>
+            {!isCloudEnabled && (
+              <div style={{ fontSize: 10, color: 'var(--color-muted)', marginBottom: 10, lineHeight: 1.5 }}>
+                Telegram подключён, но Supabase не настроен — синхронизация неактивна.
+              </div>
+            )}
+            <button
+              onClick={() => { if (confirm('Выйти из Telegram аккаунта?')) onTelegramLogout() }}
+              style={{
+                width: '100%', padding: '8px', borderRadius: 8,
+                background: 'transparent', border: '1px solid var(--color-border)',
+                color: 'var(--color-muted)', cursor: 'pointer',
+                fontFamily: 'var(--font-mono)', fontSize: 11,
+              }}
+            >
+              Выйти
+            </button>
+          </div>
+        ) : isTelegramLoginEnabled ? (
+          /* Not logged in, Telegram configured */
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--color-muted)', marginBottom: 12, lineHeight: 1.5 }}>
+              Войди через Telegram — прогресс автоматически синхронизируется на всех устройствах.
+            </div>
+            <TelegramLoginButton onAuth={onTelegramLogin} />
+            {isCloudEnabled && (
+              <div style={{ fontSize: 10, color: 'var(--color-muted)', marginTop: 10, textAlign: 'center' }}>
+                Sync ID: <span style={{ fontFamily: 'var(--font-mono)', opacity: 0.6 }}>{syncKey.slice(0, 16)}…</span>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* Telegram not configured */
+          <div style={{ fontSize: 11, color: 'var(--color-muted)', lineHeight: 1.6 }}>
+            Для входа через Telegram добавь переменную<br />
+            <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-accent)' }}>VITE_TELEGRAM_BOT_USERNAME</span><br />
+            в настройках Vercel и создай бота через @BotFather.
+            {!isCloudEnabled && (
+              <><br /><br />
+              Также нужны <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-accent)' }}>VITE_SUPABASE_URL</span> и <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-accent)' }}>VITE_SUPABASE_ANON_KEY</span>.</>
+            )}
+          </div>
+        )}
+      </div>
+
       {rows.map(({ label, desc, key }) => (
         <div key={key} style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
@@ -444,7 +522,7 @@ function SettingsPanel({ state, onUpdateSettings, onRequestNotifications, userId
         </div>
       ))}
 
-      {/* Notifications — special case */}
+      {/* Notifications */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
         padding: '14px 16px', background: 'var(--color-surface)', borderRadius: 10,
@@ -472,95 +550,6 @@ function SettingsPanel({ state, onUpdateSettings, onRequestNotifications, userId
           onChange={() => handleNotifToggle()}
           disabled={!notifSupported || notifPermission === 'denied'}
         />
-      </div>
-
-      {/* Cloud sync */}
-      <div style={{
-        padding: '14px 16px', background: 'var(--color-surface)', borderRadius: 10,
-        border: '1px solid var(--color-border)',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>☁️ Облачная синхронизация</div>
-          {isCloudEnabled && syncStatus !== 'idle' && (
-            <span style={{
-              fontSize: 10, fontWeight: 600,
-              color: syncStatus === 'ok' ? 'var(--color-success)' : syncStatus === 'error' ? 'var(--color-danger)' : 'var(--color-muted)',
-            }}>
-              {syncLabel}
-            </span>
-          )}
-        </div>
-
-        {!isCloudEnabled ? (
-          <div style={{ fontSize: 11, color: 'var(--color-muted)', lineHeight: 1.5 }}>
-            Облачный бэкап не настроен.<br />
-            Настройте Supabase и добавьте<br />
-            VITE_SUPABASE_URL и VITE_SUPABASE_ANON_KEY<br />
-            в переменные окружения Vercel.
-          </div>
-        ) : (
-          <>
-            <div style={{ fontSize: 10, color: 'var(--color-muted)', marginBottom: 6 }}>
-              ВАШ ID (скопируйте для другого устройства)
-            </div>
-            <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
-              <div style={{
-                flex: 1, padding: '8px 10px', borderRadius: 8,
-                background: '#111', border: '1px solid var(--color-border)',
-                fontFamily: 'var(--font-mono)', fontSize: 10, color: '#888',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}>
-                {userId}
-              </div>
-              <button
-                onClick={handleCopyId}
-                style={{
-                  padding: '8px 12px', borderRadius: 8, border: 'none', cursor: 'pointer',
-                  background: copied ? 'var(--color-success)' : 'var(--color-accent)',
-                  color: '#0a0a0f', fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700,
-                  flexShrink: 0, transition: 'background 0.2s',
-                }}
-              >
-                {copied ? '✓' : 'Копировать'}
-              </button>
-            </div>
-
-            <div style={{ fontSize: 10, color: 'var(--color-muted)', marginBottom: 6 }}>
-              ВОССТАНОВИТЬ С ДРУГОГО УСТРОЙСТВА
-            </div>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <input
-                value={importId}
-                onChange={(e) => setImportId(e.target.value)}
-                placeholder="Вставь свой ID..."
-                style={{
-                  flex: 1, padding: '8px 10px', borderRadius: 8,
-                  background: '#111', border: '1px solid var(--color-border)',
-                  color: 'var(--color-text)', fontFamily: 'var(--font-mono)', fontSize: 11,
-                  outline: 'none',
-                }}
-              />
-              <button
-                onClick={handleImport}
-                disabled={!importId.trim() || importStatus === 'loading'}
-                style={{
-                  padding: '8px 12px', borderRadius: 8, border: 'none',
-                  cursor: importId.trim() ? 'pointer' : 'not-allowed',
-                  background: importStatus === 'ok' ? 'var(--color-success)' : importStatus === 'error' ? 'var(--color-danger)' : importId.trim() ? 'var(--color-accent)' : 'var(--color-border)',
-                  color: '#0a0a0f', fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700,
-                  flexShrink: 0, transition: 'background 0.2s',
-                }}
-              >
-                {importStatus === 'loading' ? '...' : importStatus === 'ok' ? '✓' : importStatus === 'error' ? '✗' : 'Загрузить'}
-              </button>
-            </div>
-            {importStatus === 'error' && (
-              <div style={{ fontSize: 10, color: 'var(--color-danger)', marginTop: 6 }}>
-                Профиль с таким ID не найден
-              </div>
-            )}
-          </>
-        )}
       </div>
     </div>
   )
